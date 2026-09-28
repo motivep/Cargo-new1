@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#111827">
+<link rel="manifest" href="manifest.webmanifest">
+<title>Cargo Planner – Jednoduché rozložení nákladu</title>
+<style>
+:root{--blue:#2563eb;--bg:#f3f4f6;--panel:#fff;--line:#d1d5db;--text:#111827;--muted:#6b7280}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:Arial,Segoe UI,sans-serif}
+.app{max-width:1100px;margin:auto;min-height:100vh}
+header{background:#111827;color:#fff;padding:16px}
+h1{font-size:21px;margin:0 0 4px}.sub{font-size:12px;color:#cbd5e1}
+main{display:grid;grid-template-columns:340px 1fr;gap:12px;padding:12px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:13px}
+h2{font-size:14px;margin:0 0 10px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.field{margin-bottom:9px}
+label{display:block;font-size:11px;font-weight:700;color:var(--muted);margin-bottom:4px}
+input{width:100%;height:38px;border:1px solid var(--line);border-radius:7px;padding:7px 9px;font-size:15px}
+input[type=color]{padding:3px}
+.check{display:flex;align-items:center;gap:7px;font-size:13px;margin:8px 0}
+.check input{width:18px;height:18px}
+button{border:0;border-radius:8px;padding:11px 12px;font-weight:700;font-size:13px;cursor:pointer}
+.primary{background:var(--blue);color:#fff;width:100%;font-size:15px}
+.gray{background:#e5e7eb;color:#111827}
+.red{background:#ef4444;color:#fff;padding:5px 8px}
+.item{border:1px solid var(--line);border-radius:8px;padding:8px;margin:7px 0;background:#fafafa}
+.itemhead{display:flex;justify-content:space-between;align-items:center}
+.dot{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+.small{font-size:11px;color:var(--muted);margin-top:4px}
+.actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+.actions .wide{grid-column:1/-1}
+#result{margin-top:10px;padding:9px;border-radius:8px;font-size:12px;display:none}
+.ok{display:block!important;background:#dcfce7;color:#166534}
+.warn{display:block!important;background:#fef3c7;color:#92400e}
+#canvasWrap{background:#1f2937;border-radius:12px;min-height:540px;display:flex;align-items:center;justify-content:center;padding:12px;overflow:hidden}
+canvas{background:#e5e7eb;border-radius:7px;max-width:100%;height:auto;touch-action:none}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-bottom:10px}
+.stat{background:#f9fafb;border:1px solid var(--line);border-radius:8px;padding:8px;text-align:center}
+.stat b{display:block;font-size:16px}.stat span{font-size:10px;color:var(--muted)}
+@media(max-width:800px){
+ main{grid-template-columns:1fr;padding:8px}
+ #canvasWrap{min-height:55vh}
+ .stats{grid-template-columns:repeat(2,1fr)}
+}
+</style>
+</head>
+<body>
+<div class="app">
+<header>
+  <h1>📦 Cargo Planner</h1>
+  <div class="sub">Jednoduché hledání nejlepšího rozložení nákladu na danou plochu</div>
+</header>
+
+<main>
+<section>
+<div class="panel">
+<h2>1. Nakládací plocha</h2>
+<div class="grid2">
+  <div class="field"><label>Délka (cm)</label><input id="floorL" type="number" value="770" min="1"></div>
+  <div class="field"><label>Šířka (cm)</label><input id="floorW" type="number" value="248" min="1"></div>
+</div>
+<div class="check"><input id="rotation" type="checkbox" checked><label for="rotation">Povolit otočení kusů</label></div>
+<div class="field"><label>Mezera mezi kusy (cm)</label><input id="gap" type="number" value="0" min="0"></div>
+</div>
+
+<div class="panel">
+<h2>2. Přidat náklad</h2>
+<div class="field"><label>Název</label><input id="name" value="Euro paleta"></div>
+<div class="grid2">
+  <div class="field"><label>Délka (cm)</label><input id="l" type="number" value="120" min="1"></div>
+  <div class="field"><label>Šířka (cm)</label><input id="w" type="number" value="80" min="1"></div>
+</div>
+<div class="grid2">
+  <div class="field"><label>Počet kusů</label><input id="qty" type="number" value="19" min="1"></div>
+  <div class="field"><label>Barva</label><input id="color" type="color" value="#3b82f6"></div>
+</div>
+<button class="gray" style="width:100%" onclick="addType()">＋ Přidat druh nákladu</button>
+<div id="items"></div>
+</div>
+
+<div class="panel">
+<button class="primary" onclick="optimize()">⚡ NAJÍT NEJLEPŠÍ ROZLOŽENÍ</button>
+<div class="actions">
+<button class="gray" onclick="clearPlan()">Vymazat</button>
+<button class="gray" onclick="downloadPlan()">💾 Uložit plán</button>
+</div>
+<div id="result"></div>
+</div>
+</section>
+
+<section>
+<div class="panel">
+<div class="stats">
+  <div class="stat"><b id="placed">0 / 0</b><span>umístěno</span></div>
+  <div class="stat"><b id="area">0 %</b><span>využití plochy</span></div>
+  <div class="stat"><b id="free">0 cm²</b><span>volná plocha</span></div>
+</div>
+<div id="canvasWrap"><canvas id="canvas" width="900" height="600"></canvas></div>
+</div>
+</section>
+</main>
+
+<script>
+let types=[],placed=[],floor={L:770,W:248};
+
+function $(id){return document.getElementById(id)}
+function addType(){
+  const x={id:Date.now()+Math.random(),name:$('name').value.trim()||'Náklad',
+    L:+$('l').value,W:+$('w').value,qty:+$('qty').value,color:$('color').value};
+  if(x.L<=0||x.W<=0||x.qty<=0)return alert('Zkontroluj rozměry a počet kusů.');
+  types.push(x);renderTypes();
+}
+function renderTypes(){
+  $('items').innerHTML=types.map((x,i)=>`
+    <div class="item">
+      <div class="itemhead"><b><span class="dot" style="background:${x.color}"></span>${esc(x.name)}</b>
+      <button class="red" onclick="removeType(${i})">×</button></div>
+      <div class="small">${x.qty} ks • ${x.L} × ${x.W} cm</div>
+    </div>`).join('');
+}
+function removeType(i){types.splice(i,1);renderTypes()}
+function clearPlan(){placed=[];draw();stats(0,0,0);$('result').className='';$('result').textContent=''}
+function pieces(){
+  const a=[]; for(const t of types) for(let i=1;i<=t.qty;i++) a.push({...t,n:i});
+  return a;
+}
+function fits(r,L,W,g){
+  return L+g<=r.w && W+g<=r.h;
+}
+function contains(a,b){return b.x>=a.x&&b.y>=a.y&&b.x+b.w<=a.x+a.w&&b.y+b.h<=a.y+a.h}
+function intersects(a,b){return !(a.x+a.w<=b.x||b.x+b.w<=a.x||a.y+a.h<=b.y||b.y+b.h<=a.y)}
+function splitFree(free,u){
+  const out=[];
+  for(const r of free){
+    if(!intersects(r,u)){out.push(r);continue}
+    if(u.x>r.x)out.push({x:r.x,y:r.y,w:u.x-r.x,h:r.h});
+    if(u.x+u.w<r.x+r.w)out.push({x:u.x+u.w,y:r.y,w:r.x+r.w-(u.x+u.w),h:r.h});
+    if(u.y>r.y)out.push({x:r.x,y:r.y,w:r.w,h:u.y-r.y});
+    if(u.y+u.h<r.y+r.h)out.push({x:r.x,y:u.y+u.h,w:r.w,h:r.y+r.h-(u.y+u.h)});
+  }
+  const clean=[];
+  for(let i=0;i<out.length;i++){
+    if(out[i].w<=0||out[i].h<=0)continue;
+    let inside=false;
+    for(let j=0;j<out.length;j++)if(i!==j&&contains(out[j],out[i])){inside=true;break}
+    if(!inside)clean.push(out[i]);
+  }
+  return clean;
+}
+function pack(order){
+  const gap=Math.max(0,+$('gap').value||0);
+  const rot=$('rotation').checked;
+  let free=[{x:0,y:0,w:floor.L,h:floor.W}], out=[];
+  for(const p of order){
+    let best=null;
+    for(let i=0;i<free.length;i++){
+      const r=free[i];
+      const opts=[{L:p.L,W:p.W,rot:false}];
+      if(rot&&p.L!==p.W)opts.push({L:p.W,W:p.L,rot:true});
+      for(const o of opts){
+        if(!fits(r,o.L,o.W,gap))continue;
+        const dw=r.w-o.L,dh=r.h-o.W;
+        const score=[Math.min(dw,dh),Math.max(dw,dh),r.w*r.h-o.L*o.W];
+        if(!best||score[0]<best.score[0]||(score[0]===best.score[0]&&score[1]<best.score[1])||(score[0]===best.score[0]&&score[1]===best.score[1]&&score[2]<best.score[2]))
+          best={i,L:o.L,W:o.W,rot:o.rot,score};
+      }
+    }
+    if(!best)continue;
+    const r=free[best.i];
+    const u={x:r.x,y:r.y,w:best.L,h:best.W,piece:p,rot:best.rot};
+    out.push(u);
+    free=splitFree(free,u);
+  }
+  return out;
+}
+function optimize(){
+  floor={L:+$('floorL').value,W:+$('floorW').value};
+  if(floor.L<=0||floor.W<=0)return alert('Zkontroluj rozměry plochy.');
+  const all=pieces();
+  if(!all.length){alert('Nejdříve přidej alespoň jeden druh nákladu.');return}
+  const strategies=[
+    [...all].sort((a,b)=>b.L*b.W-a.L*a.W),
+    [...all].sort((a,b)=>Math.max(b.L,b.W)-Math.max(a.L,a.W)),
+    [...all].sort((a,b)=>Math.min(b.L,b.W)-Math.min(a.L,a.W)),
+    [...all].sort((a,b)=>(b.L+b.W)-(a.L+a.W)),
+    [...all].sort((a,b)=>b.W-a.W)
+  ];
+  let best=null;
+  for(const s of strategies){
+    const r=pack(s);
+    const area=r.reduce((n,x)=>n+x.w*x.h,0);
+    const score=[r.length,area,-r.reduce((n,x)=>Math.min(n,x.x+x.w),Infinity)];
+    if(!best||r.length>best.length||(r.length===best.length&&area>best.area)){best={r,length:r.length,area};}
+  }
+  placed=best.r;
+  draw(); stats(placed.length,all.length,best.area);
+  const un=all.length-placed.length;
+  $('result').textContent=un===0?'✓ Všechny kusy se vešly na danou plochu.':`⚠ Nevešlo se ${un} ks. Zkus povolit otočení nebo zvětšit plochu.`;
+  $('result').className=un===0?'ok':'warn';
+}
+function stats(n,total,area){
+  $('placed').textContent=`${n} / ${total}`;
+  const floorArea=floor.L*floor.W;
+  $('area').textContent=floorArea?(area/floorArea*100).toFixed(1)+' %':'0 %';
+  $('free').textContent=new Intl.NumberFormat('cs-CZ').format(Math.max(0,floorArea-area))+' cm²';
+}
+function draw(){
+  const c=$('canvas'),ctx=c.getContext('2d');
+  const pad=30,scale=Math.min((c.width-pad*2)/Math.max(1,floor.L),(c.height-pad*2)/Math.max(1,floor.W));
+  ctx.clearRect(0,0,c.width,c.height);
+  ctx.fillStyle='#d1d5db';ctx.fillRect(pad,pad,floor.L*scale,floor.W*scale);
+  ctx.strokeStyle='#111827';ctx.lineWidth=3;ctx.strokeRect(pad,pad,floor.L*scale,floor.W*scale);
+  ctx.fillStyle='#374151';ctx.font='bold 13px Arial';ctx.fillText(`${floor.L} × ${floor.W} cm`,pad,18);
+  for(const p of placed){
+    const x=pad+p.x*scale,y=pad+p.y*scale,w=p.w*scale,h=p.h*scale;
+    ctx.fillStyle=p.piece.color;ctx.fillRect(x,y,w,h);
+    ctx.strokeStyle='#111827';ctx.lineWidth=1;ctx.strokeRect(x,y,w,h);
+    ctx.fillStyle='#fff';ctx.font='bold 12px Arial';ctx.textAlign='center';ctx.textBaseline='middle';
+    const label=`${p.piece.name} #${p.piece.n}`;
+    ctx.fillText(label,x+w/2,y+h/2);
+    ctx.font='10px Arial';ctx.fillText(`${p.w} × ${p.h}`,x+w/2,y+h/2+15);
+  }
+  ctx.textAlign='left';ctx.textBaseline='alphabetic';
+}
+function downloadPlan(){
+  const data={version:'simple-1.0',floor,rotation:$('rotation').checked,gap:+$('gap').value||0,
+    pieces:placed.map(p=>({name:p.piece.name,piece:p.piece.n,x:p.x,y:p.y,L:p.w,W:p.h,rotated:p.rot}))};
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));
+  a.download='cargo-plan.json';a.click();
+}
+function esc(s){return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]))}
+floor={L:+$('floorL').value,W:+$('floorW').value};draw();
+addType();
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(()=>{});
+</script>
+</body>
+</html>
